@@ -40,3 +40,18 @@ Runtime:
 - 32-bit builds could not be tested here (the overflow guards are written for them but unexercised).
 - Thread safety is unchanged: note_on/note_off and render still need external locking (see the header notes).
 - Sound quality items (interpolation, filter, modulators, chorus/reverb sends) are not part of this change.
+
+## Follow-up changes in this fork (after the original hardening patch)
+
+- The internal stream helpers were called through function pointers cast to a different type.
+  Calling a function through an incompatible function-pointer type is undefined behaviour and
+  clang's UBSan reports it on every load. The helpers now take `void* data` and are assigned
+  without casts; `struct tsf_stream` / `struct tml_stream` and the public API are unchanged.
+- The voice iterators computed `f->voices + f->voiceNum` while `f->voices` was still NULL.
+  Adding zero to a null pointer is undefined behaviour, reported by UBSan whenever a font is
+  rendered before the first note. The end pointer is now derived only when the voice array exists.
+- `tests/run-tests.sh` honours `$CC`; CI runs the suite with gcc and with clang, both under
+  AddressSanitizer + UndefinedBehaviorSanitizer with leak checking.
+- The gcc CI job asserts the valid-font audio hash against the upstream v0.9 reference
+  (`d77c557477edc394`) and the valid-MIDI message hash against `f5b1513f9f7e8e13`, so a silent
+  change in audio output or MIDI parsing fails the build instead of only being printed.
