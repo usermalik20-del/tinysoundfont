@@ -5,12 +5,13 @@ on:
     branches:
       - main
       - claude/hardening
+      - fix/ubsan-stream-casts
   pull_request:
   workflow_dispatch:
 
 jobs:
   sanitizers:
-    name: ASan + UBSan test suite
+    name: ASan + UBSan test suite (gcc)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,3 +19,15 @@ jobs:
         run: gcc --version | head -1
       - name: Run hardening test suite
         run: bash tests/run-tests.sh
+
+  sanitizers-clang:
+    name: ASan + UBSan test suite (clang)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: Show toolchain
+        run: clang --version | head -1
+      - name: Run hardening test suite with clang
+        run: CC=clang bash tests/run-tests.sh

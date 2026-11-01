@@ -206,11 +206,11 @@ extern "C" {
 #endif
 
 #ifndef TML_NO_STDIO
-static int tml_stream_stdio_read(FILE* f, void* ptr, unsigned int size) { return (int)fread(ptr, 1, size, f); }
+static int tml_stream_stdio_read(void* data, void* ptr, unsigned int size) { return (int)fread(ptr, 1, size, (FILE*)data); }
 TMLDEF tml_message* tml_load_filename(const char* filename)
 {
 	struct tml_message* res;
-	struct tml_stream stream = { TML_NULL, (int(*)(void*,void*,unsigned int))&tml_stream_stdio_read };
+	struct tml_stream stream = { TML_NULL, tml_stream_stdio_read };
 	#if __STDC_WANT_SECURE_LIB__
 	FILE* f = TML_NULL; fopen_s(&f, filename, "rb");
 	#else
@@ -225,10 +225,10 @@ TMLDEF tml_message* tml_load_filename(const char* filename)
 #endif
 
 struct tml_stream_memory { const char* buffer; unsigned int total, pos; };
-static int tml_stream_memory_read(struct tml_stream_memory* m, void* ptr, unsigned int size) { if (size > m->total - m->pos) size = m->total - m->pos; TML_MEMCPY(ptr, m->buffer+m->pos, size); m->pos += size; return size; }
+static int tml_stream_memory_read(void* data, void* ptr, unsigned int size) { struct tml_stream_memory* m = (struct tml_stream_memory*)data; if (size > m->total - m->pos) size = m->total - m->pos; TML_MEMCPY(ptr, m->buffer+m->pos, size); m->pos += size; return size; }
 TMLDEF struct tml_message* tml_load_memory(const void* buffer, int size)
 {
-	struct tml_stream stream = { TML_NULL, (int(*)(void*,void*,unsigned int))&tml_stream_memory_read };
+	struct tml_stream stream = { TML_NULL, tml_stream_memory_read };
 	struct tml_stream_memory f = { 0, 0, 0 };
 	if (!buffer || size <= 0) return TML_NULL;
 	f.buffer = (const char*)buffer;
