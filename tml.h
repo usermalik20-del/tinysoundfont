@@ -230,8 +230,9 @@ TMLDEF struct tml_message* tml_load_memory(const void* buffer, int size)
 {
 	struct tml_stream stream = { TML_NULL, (int(*)(void*,void*,unsigned int))&tml_stream_memory_read };
 	struct tml_stream_memory f = { 0, 0, 0 };
+	if (!buffer || size <= 0) return TML_NULL;
 	f.buffer = (const char*)buffer;
-	f.total = size;
+	f.total = (unsigned int)size;
 	stream.data = &f;
 	return tml_load(&stream);
 }
@@ -299,10 +300,12 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 
 	if (p->message_array_size == p->message_count)
 	{
+		tml_message* grown;
 		//start allocated memory size of message array at 64, double each time until 8192, then add 1024 entries until done
 		p->message_array_size += (!p->message_array_size ? 64 : (p->message_array_size > 4096 ? 1024 : p->message_array_size));
-		*f = (tml_message*)TML_REALLOC(*f, p->message_array_size * sizeof(tml_message));
-		if (!*f) { TML_ERROR("Out of memory"); return -1; }
+		grown = (tml_message*)TML_REALLOC(*f, p->message_array_size * sizeof(tml_message));
+		if (!grown) { p->message_array_size = p->message_count; TML_ERROR("Out of memory"); return -1; } //keep the old array so the messages parsed so far stay valid
+		*f = grown;
 	}
 	evt = *f + p->message_count;
 
@@ -310,8 +313,9 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 	if ((status == TML_SYSEX) || (status == TML_EOX)) //sysex
 	{
 		//sysex messages are not handled
-		p->buf += tml_readvariablelength(p);
-		if (p->buf > p->buf_end) { TML_WARN("Unexpected end of file"); p->buf = p->buf_end; return -1; }
+		int sysexlen = tml_readvariablelength(p);
+		if (sysexlen < 0 || sysexlen > p->buf_end - p->buf) { TML_WARN("Unexpected end of file"); p->buf = p->buf_end; return -1; }
+		p->buf += sysexlen;
 		evt->type = 0;
 	}
 	else if (status == 0xFF) //meta events
@@ -319,7 +323,8 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 		int meta_type = tml_readbyte(p), buflen = tml_readvariablelength(p);
 		unsigned char* metadata = p->buf;
 		if (meta_type < 0) { TML_WARN("Unexpected end of file"); return -1; }
-		if (buflen > 0 && (p->buf += buflen) > p->buf_end) { TML_WARN("Unexpected end of file"); p->buf = p->buf_end; return -1; }
+		if (buflen > p->buf_end - p->buf) { TML_WARN("Unexpected end of file"); p->buf = p->buf_end; return -1; }
+		if (buflen > 0) p->buf += buflen;
 
 		switch (meta_type)
 		{
@@ -396,10 +401,11 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 	if (midi_header[12] & 0x80) { TML_ERROR("File uses unsupported SMPTE timing"); return messages; }
 	num_tracks = (int)(midi_header[10] << 8) | midi_header[11];
 	division = (int)(midi_header[12] << 8) | midi_header[13]; //division is ticks per beat (quarter-note)
-	if (num_tracks <= 0 && division <= 0) { TML_ERROR("Doesn't look like a MIDI file: invalid track or division values"); return messages; }
+	if (num_tracks <= 0 || division <= 0) { TML_ERROR("Doesn't look like a MIDI file: invalid track or division values"); return messages; }
 
 	// Allocate temporary tracks array for parsing
 	tracks = (struct tml_track*)TML_MALLOC(sizeof(struct tml_track) * num_tracks);
+	if (!tracks) { TML_ERROR("Out of memory"); return messages; }
 	tracksEnd = &tracks[num_tracks];
 	for (t = tracks; t != tracksEnd; t++) t->Idx = t->End = t->Ticks = 0;
 
@@ -413,10 +419,16 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 			{ TML_WARN("Invalid MTrk header"); break; }
 
 		// Get size of track data and read into buffer (allocate bigger buffer if needed)
-		track_length = track_header[7] | (track_header[6] << 8) | (track_header[5] << 16) | (track_header[4] << 24);
+		track_length = (int)((unsigned int)track_header[7] | ((unsigned int)track_header[6] << 8) | ((unsigned int)track_header[5] << 16) | ((unsigned int)track_header[4] << 24));
 		if (track_length < 0) { TML_WARN("Invalid MTrk header"); break; }
-		if (trackbufsize < track_length) { TML_FREE(trackbuf); trackbuf = (unsigned char*)TML_MALLOC(trackbufsize = track_length); }
-		if (stream->read(stream->data, trackbuf, track_length) != track_length) { TML_WARN("Unexpected end of file"); break; }
+		if (trackbufsize < track_length)
+		{
+			TML_FREE(trackbuf);
+			trackbuf = (unsigned char*)TML_MALLOC(track_length);
+			trackbufsize = (trackbuf ? track_length : 0);
+			if (!trackbuf) { TML_ERROR("Out of memory"); break; }
+		}
+		if (track_length && stream->read(stream->data, trackbuf, track_length) != track_length) { TML_WARN("Unexpected end of file"); break; }
 
 		t->Idx = p.message_count;
 		for (p.buf_end = (p.buf = trackbuf) + track_length; p.buf != p.buf_end;)
@@ -441,7 +453,7 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 		for (step_smallest = 0; step_smallest != 0x7fffffff; ticks += step_smallest)
 		{
 			step_smallest = 0x7fffffff;
-			msec = tempo_msec + (int)((ticks - tempo_ticks) * ticks2time);
+			{ double msecd = tempo_msec + (double)(ticks - tempo_ticks) * ticks2time; msec = (msecd >= 2147483647.0 ? 0x7fffffff : (int)msecd); }
 			for (t = tracks; t != tracksEnd; t++)
 			{
 				if (t->Idx == t->End) continue;

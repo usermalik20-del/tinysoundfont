@@ -1,0 +1,20 @@
+name: TinySoundFont hardening checks
+
+on:
+  push:
+    branches:
+      - main
+      - claude/hardening
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  sanitizers:
+    name: ASan + UBSan test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: gcc --version | head -1
+      - name: Run hardening test suite
+        run: bash tests/run-tests.sh
