@@ -7,6 +7,7 @@ on:
       - claude/hardening
       - fix/ubsan-stream-casts
       - fix/tml-message-array-overflow
+      - quality/*
   pull_request:
   workflow_dispatch:
 
@@ -38,13 +39,15 @@ jobs:
         run: CC=clang bash tests/run-tests.sh
 
   sanitizers-sf3:
-    name: ASan + UBSan test suite (gcc, SF3 / Ogg path)
+    name: ASan + UBSan test suite (gcc, SF3 / Ogg path + fixture)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Fetch pinned stb_vorbis
         run: curl -fsSL -o /tmp/stb_vorbis.c "$STB_VORBIS_URL" && head -2 /tmp/stb_vorbis.c
       - name: Run hardening test suite with the SF3 path compiled in
+        env:
+          TSF_BASELINE_SUFFIX: -stbvorbis
         run: STBVORBIS=/tmp/stb_vorbis.c bash tests/run-tests.sh
 
   runtime-32bit:
@@ -57,20 +60,51 @@ jobs:
       - name: Show 32-bit toolchain
         run: gcc --version | head -1 && gcc -m32 -dM -E - < /dev/null | grep __SIZEOF_POINTER__
       - name: Run hardening test suite as 32-bit binaries
+        env:
+          TSF_BASELINE_SUFFIX: -m32
         run: CC="gcc -m32" bash tests/run-tests.sh
 
-  armv7-compile:
-    name: ARMv7 / armeabi-v7a compile check
+  runtime-armv7:
+    name: ARMv7 / armeabi-v7a compile and qemu run
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install ARMv7 cross compiler
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf
-      - name: Compile all header implementations for ARMv7
+      - name: Install ARMv7 cross compiler and qemu
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf qemu-user
+      - name: Compile every test program for ARMv7
         run: |
           set -e
-          for source in tests/regress.c tests/fuzz.c tests/oom.c tests/steal.c tests/tmlfuzz.c tests/tmloom.c; do
+          for source in tests/regress.c tests/fuzz.c tests/oom.c tests/steal.c tests/tmlfuzz.c tests/tmloom.c tests/mod.c tests/fx.c tests/realtime.c; do
             output="/tmp/$(basename "$source" .c).armv7.o"
-            arm-linux-gnueabihf-gcc -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -O2 -I. -c "$source" -o "$output"
+            arm-linux-gnueabihf-gcc -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -static -O2 -I. -c "$source" -o "$output"
           done
-          file /tmp/*.armv7.o
+          file /tmp/*.armv7.o | head -3
+      - name: Run the ARMv7 regression under qemu and record the audio hash
+        run: |
+          arm-linux-gnueabihf-gcc -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -static -O2 -I. -o /tmp/tsf_regress.armv7 tests/regress.c -lm
+          qemu-arm /tmp/tsf_regress.armv7 examples/florestan-subset.sf2
+
+  runtime-arm64:
+    name: ARM64 runtime test suite (native runner)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: uname -m && gcc --version | head -1
+      - name: Run hardening test suite on AArch64
+        run: bash tests/run-tests.sh
+
+  baseline-record:
+    name: Record audio hash baselines (informational)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print the hashes the pinned baselines should contain
+        run: |
+          set -e
+          gcc -O2 -I. -o /tmp/regress tests/regress.c -lm
+          echo "x86_64-gcc-O2: $(/tmp/regress examples/florestan-subset.sf2 | sed -n 's/.*hash: \([0-9a-f]*\).*/\1/p')"
+          clang --version >/dev/null 2>&1 || sudo apt-get install -y clang >/dev/null
+          clang -O2 -I. -o /tmp/regress.clang tests/regress.c -lm
+          echo "x86_64-clang-O2: $(/tmp/regress.clang examples/florestan-subset.sf2 | sed -n 's/.*hash: \([0-9a-f]*\).*/\1/p')"

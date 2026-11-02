@@ -174,6 +174,14 @@ TMLDEF tml_message* tml_load_tsf_stream(struct tsf_stream* stream);
 #  define TML_REALLOC realloc
 #endif
 
+/* Resource limits - adjust or override before including tml.h */
+#ifndef TML_MAX_MESSAGES
+#  define TML_MAX_MESSAGES 100000
+#endif
+#ifndef TML_MAX_TRACK_LENGTH
+#  define TML_MAX_TRACK_LENGTH (16u * 1024u * 1024u) /* 16 MiB */
+#endif
+
 #if !defined(TML_MEMCPY)
 #  include <string.h>
 #  define TML_MEMCPY  memcpy
@@ -306,7 +314,7 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 		if (p->message_array_size <= 0) new_size = 64;
 		else if (p->message_array_size > 4096) new_size = (size_t)p->message_array_size + 1024;
 		else new_size = (size_t)p->message_array_size * 2;
-		if (new_size > (size_t)0x7FFFFFFF || new_size > ((size_t)-1) / sizeof(tml_message)) { TML_ERROR("Too many messages"); return -1; }
+		if (new_size > (size_t)TML_MAX_MESSAGES || new_size > (size_t)0x7FFFFFFF || new_size > ((size_t)-1) / sizeof(tml_message)) { TML_ERROR("Too many messages"); return -1; }
 		p->message_array_size = (int)new_size;
 		grown = (tml_message*)TML_REALLOC(*f, new_size * sizeof(tml_message));
 		if (!grown) { p->message_array_size = p->message_count; TML_ERROR("Out of memory"); return -1; } //keep the old array so the messages parsed so far stay valid
@@ -425,7 +433,7 @@ TMLDEF tml_message* tml_load(struct tml_stream* stream)
 
 		// Get size of track data and read into buffer (allocate bigger buffer if needed)
 		track_length = (int)((unsigned int)track_header[7] | ((unsigned int)track_header[6] << 8) | ((unsigned int)track_header[5] << 16) | ((unsigned int)track_header[4] << 24));
-		if (track_length < 0) { TML_WARN("Invalid MTrk header"); break; }
+		if (track_length < 0 || (unsigned int)track_length > (unsigned int)TML_MAX_TRACK_LENGTH) { TML_WARN("Invalid or oversized MTrk header"); break; }
 		if (trackbufsize < track_length)
 		{
 			TML_FREE(trackbuf);

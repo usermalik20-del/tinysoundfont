@@ -68,3 +68,79 @@ Runtime:
   path (previously never compiled here) with a pinned stb_vorbis revision and runs the
   whole suite through it. This is what the earlier "SF3 path only got the padding-sample
   change and is untested" note referred to.
+
+# Quality defaults and new features (this fork)
+
+The engine now ships the features upstream lists under "NOT YET IMPLEMENTED". All
+of the behaviour below was verified on device (ARM64, `-O0`) and is exercised by
+`tests/run-tests.sh`; the sanitizer lanes run in CI.
+
+## Interpolation
+`tsf_voice_interpolate()` applies Catmull-Rom spline interpolation with clamped
+neighbours for non looping regions and wrapped neighbours inside loop points, so
+it never reads outside the region. Define `TSF_HIGH_QUALITY_INTERPOLATION 0` for
+the old 2 tap linear path. Audio hash of the reference font changes (it is now
+`0298c93d64fbb4e5` with gcc `-O0`/aarch64); the interpolation is the only reason.
+
+## Low-pass filter
+The biquad coefficients are computed from a pre-warped tangent with the cutoff and
+Q clamped to a stable range (the previous `tan()` was unguarded and could produce
+denormals near Nyquist), and every block ramps the coefficients towards their
+target instead of jumping, which removes the zipper noise when the cutoff is
+modulated. `tsf_voice_lowpass_ramp()` runs once per rendered sample.
+
+## Modulators
+- Preset (`pmod`) and instrument (`imod`) modulator records are read into each
+  region (up to `TSF_MAX_MODULATORS`, default 8). Bag modulator index chains are
+  clamped and forced monotonic during sanitization, like the generator chains.
+- Sources: MIDI continuous controllers (any CC number), channel pressure, note
+  velocity, key number, pitch wheel and pitch wheel sensitivity. Curve, polarity
+  and direction bits are applied (linear / concave / convex / switch, unipolar /
+  bipolar, positive / negative) and the second source together with the absolute
+  value transform are honoured.
+- Destinations: `initialFilterFc`, `initialAttenuation`, `modLfoToPitch`,
+  `vibLfoToPitch`, `modEnvToFilterFc`, `modLfoToFilterFc`, `modLfoToVolume`,
+  `chorusEffectsSend`, `reverbEffectsSend`, coarse and fine tune. Other
+  destinations are ignored (no invented behaviour).
+- Sources that cannot change while a note sounds (velocity, key) are evaluated at
+  note-on; sources that can (CC, channel pressure, pitch wheel) are re-evaluated
+  every render block, so mod wheel vibrato works on a sounding note.
+- The SF2.01 default modulators are installed for channel pressure -> vibrato
+  depth and mod wheel -> vibrato depth (sections 8.4.3 / 8.4.4). The ones this
+  engine already implements elsewhere (velocity/volume/expression attenuation,
+  pan, pitch wheel and the broken 8.4.2 velocity-to-filter) are deliberately not
+  duplicated. `TSF_DEFAULT_VELOCITY_TO_FILTER 1` enables the 8.4.2 modulator.
+- `tsf_channel_set_pressure()` / `tsf_channel_get_pressure()` were added because
+  channel pressure had no way in.
+
+## Chorus and reverb
+- `ChorusEffectsSend` (generator 15) and `ReverbEffectsSend` (generator 16) are
+  parsed, and `tsf_channel_set_reverb/set_chorus` plus CC91 / CC93 set per
+  channel sends.
+- `tsf_set_effects(f, chorus, reverb)` enables a stereo chorus and a small
+  Schroeder reverb. Buffers are allocated by that call (never while rendering)
+  and scale with the sample rate; disabling the stage releases them.
+- Honest limitation: the sends are folded into a single amount for the mix
+  (the maximum send over the sounding voices) instead of separate per voice
+  buses, so two instruments with very different sends share one wet level.
+
+## Realtime guarantees
+- Rendering performs no allocation: verified by `tests/realtime.c`, which
+  replaces the allocators with counting wrappers and fails if a single
+  malloc/realloc/free happens while rendering with modulators and effects on.
+- `tsf_playback.h` (new, separate header) serializes every `tsf_*` call of one
+  instance behind a mutex. Control calls block; render calls try-lock by default
+  (`TSF_PLAYBACK_RENDER_TRY_LOCK`) and hand back silence instead of blocking the
+  audio thread. `tests/thread.c` runs a render thread against a note/controller
+  thread for 1.5 s and checks for torn state and non finite output.
+
+## Fixed while testing
+- An odd sized `smpl` chunk left the RIFF stream one byte out of alignment in the
+  SF3 path (the trailing pad byte was only skipped when stb_vorbis was not
+  compiled in), so any chunk that followed it was misread. `tests/data/tone.sf3`
+  has an odd sized Ogg payload and covers this.
+
+## Not claimed
+- No ASan/UBSan run happens on the local ARM64 emulator (libasan/libubsan cannot
+  be linked and optimized builds SIGILL there); sanitizer evidence comes from CI.
+- Poly (key) pressure is not tracked; modulators that use it evaluate to 0.
