@@ -300,10 +300,15 @@ static int tml_parsemessage(tml_message** f, struct tml_parser* p)
 
 	if (p->message_array_size == p->message_count)
 	{
-		tml_message* grown;
+		tml_message* grown; size_t new_size;
 		//start allocated memory size of message array at 64, double each time until 8192, then add 1024 entries until done
-		p->message_array_size += (!p->message_array_size ? 64 : (p->message_array_size > 4096 ? 1024 : p->message_array_size));
-		grown = (tml_message*)TML_REALLOC(*f, p->message_array_size * sizeof(tml_message));
+		//the arithmetic is done in size_t and checked, so the counters can never overflow
+		if (p->message_array_size <= 0) new_size = 64;
+		else if (p->message_array_size > 4096) new_size = (size_t)p->message_array_size + 1024;
+		else new_size = (size_t)p->message_array_size * 2;
+		if (new_size > (size_t)0x7FFFFFFF || new_size > ((size_t)-1) / sizeof(tml_message)) { TML_ERROR("Too many messages"); return -1; }
+		p->message_array_size = (int)new_size;
+		grown = (tml_message*)TML_REALLOC(*f, new_size * sizeof(tml_message));
 		if (!grown) { p->message_array_size = p->message_count; TML_ERROR("Out of memory"); return -1; } //keep the old array so the messages parsed so far stay valid
 		*f = grown;
 	}
