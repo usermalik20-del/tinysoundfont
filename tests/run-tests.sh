@@ -27,7 +27,7 @@ san_compile() { # san_compile <output> <source>
 	$CC $SAN $SF3FLAGS -I.. -o "$1" "$2" -lm
 }
 ARCH=$(uname -m)
-BASELINE="baselines/${ARCH}-${CCNAME}-${OPT}${TSF_BASELINE_SUFFIX}.txt"
+BASELINE="baselines/${ARCH}-${CCNAME}-${OPT#-}${TSF_BASELINE_SUFFIX}.txt"
 
 echo "[ 1/10] regression: audio output of a valid SoundFont"
 $CC $OPT $SF3FLAGS -I.. -o /tmp/tsf_regress regress.c -lm && /tmp/tsf_regress $SF2
