@@ -46,3 +46,31 @@ jobs:
         run: curl -fsSL -o /tmp/stb_vorbis.c "$STB_VORBIS_URL" && head -2 /tmp/stb_vorbis.c
       - name: Run hardening test suite with the SF3 path compiled in
         run: STBVORBIS=/tmp/stb_vorbis.c bash tests/run-tests.sh
+
+  runtime-32bit:
+    name: 32-bit runtime test suite (x86)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install 32-bit compiler and sanitizer runtime
+        run: sudo apt-get update && sudo apt-get install -y gcc-multilib
+      - name: Show 32-bit toolchain
+        run: gcc --version | head -1 && gcc -m32 -dM -E - < /dev/null | grep __SIZEOF_POINTER__
+      - name: Run hardening test suite as 32-bit binaries
+        run: CC="gcc -m32" bash tests/run-tests.sh
+
+  armv7-compile:
+    name: ARMv7 / armeabi-v7a compile check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ARMv7 cross compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-linux-gnueabihf
+      - name: Compile all header implementations for ARMv7
+        run: |
+          set -e
+          for source in tests/regress.c tests/fuzz.c tests/oom.c tests/steal.c tests/tmlfuzz.c tests/tmloom.c; do
+            output="/tmp/$(basename "$source" .c).armv7.o"
+            arm-linux-gnueabihf-gcc -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -O2 -I. -c "$source" -o "$output"
+          done
+          file /tmp/*.armv7.o
