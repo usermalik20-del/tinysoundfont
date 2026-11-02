@@ -37,7 +37,7 @@ if [ -f "$BASELINE" ]; then
 	[ "$HASH" = "$EXPECT" ] || { echo "audio hash $HASH differs from baseline $BASELINE ($EXPECT)"; exit 1; }
 	echo "audio hash matches baseline $BASELINE ($HASH)"
 else
-	echo "RECORD: no baseline recorded for $ARCH / $CCNAME / $OPT yet - audio hash is $HASH"
+	echo "RECORD: $BASELINE does not exist yet - audio hash is $HASH"
 fi
 
 echo "[ 2/10] fuzz: 4000 corrupted SoundFonts under ASan+UBSan"

@@ -7,10 +7,21 @@
 <uname -m>-<compiler>-<optimization>.txt
 ```
 
-so a regression on one architecture does not have to fail another. Record a new
-baseline by running the suite once on the target and saving the printed hash as
-`RECORD:` reports it — the hash is a strict equality check once the file exists.
+so a regression on one architecture does not have to fail another. The hash is a
+strict equality check once a file exists; without a file the suite prints
+`RECORD: <file> does not exist yet - audio hash is <hash>` and passes, so a new
+platform can be recorded from a CI log in one run.
 
-Baselines are pinned for architectures that are actually executed in CI
-(x86_64 gcc/clang, x86_64 32 bit) and for aarch64 built with `-O0`, which is the
-only level the local ARM64 emulator can execute.
+The level of optimization is part of the file name because it changes the
+floating point codegen: `aarch64-gcc-O0` (the only level the local ARM64
+emulator can execute) and `aarch64-gcc-O2` (CI) legitimately differ.
+
+| file | recorded by |
+| --- | --- |
+| `x86_64-gcc-O2.txt` | CI, "ASan + UBSan test suite (gcc)" |
+| `x86_64-clang-O2.txt` | CI, clang lane |
+| `x86_64-gcc-O2-m32.txt` | CI, 32-bit lane (`TSF_BASELINE_SUFFIX=-m32`) |
+| `x86_64-gcc-O2-stbvorbis.txt` | CI, SF3 lane (`TSF_BASELINE_SUFFIX=-stbvorbis`); identical to the plain gcc hash, recorded separately so the lane can pin it |
+| `aarch64-gcc-O2.txt` | CI, native ARM64 runner |
+| `armv7-gcc-O2.txt` | CI, ARMv7 cross build run under qemu |
+| `aarch64-gcc-O0.txt` | locally on the iSH ARM64 emulator |

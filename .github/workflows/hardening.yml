@@ -79,10 +79,16 @@ jobs:
             arm-linux-gnueabihf-gcc -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -static -O2 -I. -c "$source" -o "$output"
           done
           file /tmp/*.armv7.o | head -3
-      - name: Run the ARMv7 regression under qemu and record the audio hash
+      - name: Run the ARMv7 regression under qemu and compare the audio hash
         run: |
+          set -e
           arm-linux-gnueabihf-gcc -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -static -O2 -I. -o /tmp/tsf_regress.armv7 tests/regress.c -lm
-          qemu-arm /tmp/tsf_regress.armv7 examples/florestan-subset.sf2
+          HASH=$(qemu-arm /tmp/tsf_regress.armv7 examples/florestan-subset.sf2 | sed -n 's/.*hash: \([0-9a-f]*\).*/\1/p')
+          echo "armv7 audio hash: $HASH"
+          if [ -f tests/baselines/armv7-gcc-O2.txt ]; then
+            [ "$HASH" = "$(cat tests/baselines/armv7-gcc-O2.txt)" ] || { echo "armv7 hash differs from the pinned baseline"; exit 1; }
+            echo "armv7 hash matches tests/baselines/armv7-gcc-O2.txt"
+          fi
 
   runtime-arm64:
     name: ARM64 runtime test suite (native runner)
