@@ -71,6 +71,6 @@ jobs:
           set -e
           for source in tests/regress.c tests/fuzz.c tests/oom.c tests/steal.c tests/tmlfuzz.c tests/tmloom.c; do
             output="/tmp/$(basename "$source" .c).armv7.o"
-            arm-linux-gnueabihf-gcc -march=armv7-a -mfloat-abi=hard -O2 -I. -c "$source" -o "$output"
+            arm-linux-gnueabihf-gcc -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard -O2 -I. -c "$source" -o "$output"
           done
           file /tmp/*.armv7.o

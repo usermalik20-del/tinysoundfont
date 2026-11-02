@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 SF2=../examples/florestan-subset.sf2
 MID=../examples/venture.mid
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined"
-export ASAN_OPTIONS=detect_leaks=1
+export ASAN_OPTIONS=detect_leaks=1:allocator_may_return_null=1
 CC=${CC:-gcc}
 SF3FLAGS=""
 if [ -n "$STBVORBIS" ]; then
@@ -29,7 +29,7 @@ else
 fi
 
 echo "[2/6] fuzz: 4000 corrupted SoundFonts under ASan+UBSan"
-$CC $SAN $SF3FLAGS -I.. -o /tmp/tsf_fuzz fuzz.c -lm && ASAN_OPTIONS=detect_leaks=0 /tmp/tsf_fuzz $SF2 4000
+$CC $SAN $SF3FLAGS -I.. -o /tmp/tsf_fuzz fuzz.c -lm && ASAN_OPTIONS=detect_leaks=0:allocator_may_return_null=1 /tmp/tsf_fuzz $SF2 4000
 
 echo "[3/6] allocation-failure injection (SoundFont loader) with leak checking"
 $CC $SAN $SF3FLAGS -I.. -o /tmp/tsf_oom oom.c -lm && /tmp/tsf_oom $SF2
@@ -38,7 +38,7 @@ echo "[4/6] voice limit: a new note must still get a voice"
 $CC -O1 $SF3FLAGS -I.. -o /tmp/tsf_steal steal.c -lm && /tmp/tsf_steal $SF2
 
 echo "[5/6] fuzz: 4000 corrupted MIDI files under ASan+UBSan (valid-file hash identical to upstream: f5b1513f9f7e8e13)"
-$CC $SAN $SF3FLAGS -I.. -o /tmp/tml_fuzz tmlfuzz.c -lm && ASAN_OPTIONS=detect_leaks=0 /tmp/tml_fuzz $MID 4000
+$CC $SAN $SF3FLAGS -I.. -o /tmp/tml_fuzz tmlfuzz.c -lm && ASAN_OPTIONS=detect_leaks=0:allocator_may_return_null=1 /tmp/tml_fuzz $MID 4000
 
 echo "[6/6] allocation-failure injection (MIDI loader) with leak checking"
 $CC $SAN $SF3FLAGS -I.. -o /tmp/tml_oom tmloom.c -lm && /tmp/tml_oom $MID
