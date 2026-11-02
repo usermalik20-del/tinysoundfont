@@ -55,3 +55,16 @@ Runtime:
 - The gcc CI job asserts the valid-font audio hash against the upstream v0.9 reference
   (`d77c557477edc394`) and the valid-MIDI message hash against `f5b1513f9f7e8e13`, so a silent
   change in audio output or MIDI parsing fails the build instead of only being printed.
+- The padding sample that was added to the sample buffer is now only allocated after an
+  overflow check that also holds on 64-bit builds: `resNum + 1` was evaluated in 32-bit
+  arithmetic on the SF3 / Ogg Vorbis path and in the trim step of `tsf_decode_sf3_samples`,
+  so a decoded sample count of `SIZE_MAX` samples would have wrapped to a zero-sized
+  allocation followed by an out-of-bounds write. The same check replaced the 32-bit-only
+  guard on the raw PCM path, and the sample buffer growth in `tsf_decode_sf3_samples` now
+  multiplies in `size_t`.
+- The message-array growth in `tml.h` is computed in `size_t` and checked against
+  `INT_MAX` and `SIZE_MAX / sizeof(tml_message)`, so the counters cannot overflow.
+- CI gained an SF3 / Ogg Vorbis lane that compiles the `STB_VORBIS_INCLUDE_STB_VORBIS_H`
+  path (previously never compiled here) with a pinned stb_vorbis revision and runs the
+  whole suite through it. This is what the earlier "SF3 path only got the padding-sample
+  change and is untested" note referred to.

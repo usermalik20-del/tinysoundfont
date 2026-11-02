@@ -6,8 +6,13 @@ on:
       - main
       - claude/hardening
       - fix/ubsan-stream-casts
+      - fix/tml-message-array-overflow
   pull_request:
   workflow_dispatch:
+
+env:
+  # pinned stb_vorbis revision used by the SF3 / Ogg Vorbis lane
+  STB_VORBIS_URL: https://raw.githubusercontent.com/nothings/stb/d14d46f6b44456eb88beac58cba833a4135d4c89/stb_vorbis.c
 
 jobs:
   sanitizers:
@@ -31,3 +36,13 @@ jobs:
         run: clang --version | head -1
       - name: Run hardening test suite with clang
         run: CC=clang bash tests/run-tests.sh
+
+  sanitizers-sf3:
+    name: ASan + UBSan test suite (gcc, SF3 / Ogg path)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned stb_vorbis
+        run: curl -fsSL -o /tmp/stb_vorbis.c "$STB_VORBIS_URL" && head -2 /tmp/stb_vorbis.c
+      - name: Run hardening test suite with the SF3 path compiled in
+        run: STBVORBIS=/tmp/stb_vorbis.c bash tests/run-tests.sh

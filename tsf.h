@@ -988,8 +988,9 @@ static int tsf_decode_sf3_samples(const void* rawBuffer, float** pFloatBuffer, u
 			if (resNum > resMax)
 			{
 				do { resMax += (resMax ? (resMax < 1048576 ? resMax : 1048576) : resInitial); } while (resNum > resMax);
+				if (resMax < resNum || (size_t)resMax > (size_t)-1 / sizeof(float)) { TSF_FREE(res); return 0; } //size computation would overflow
 				oldres = res;
-				res = (float*)TSF_REALLOC(res, resMax * sizeof(float));
+				res = (float*)TSF_REALLOC(res, (size_t)resMax * sizeof(float));
 				if (!res) { TSF_FREE(oldres); return 0; }
 			}
 
@@ -1000,7 +1001,8 @@ static int tsf_decode_sf3_samples(const void* rawBuffer, float** pFloatBuffer, u
 	}
 
 	// Trim the sample buffer down then return success (unless out of memory)
-	if (!res || !(*pFloatBuffer = (float*)TSF_REALLOC(res, ((size_t)resNum + 1) * sizeof(float)))) { TSF_FREE(res); return 0; }
+	if (!res || (size_t)resNum > (size_t)-1 / sizeof(float) - 1) { TSF_FREE(res); return 0; } //size computation would overflow
+	if (!(*pFloatBuffer = (float*)TSF_REALLOC(res, ((size_t)resNum + 1) * sizeof(float)))) { TSF_FREE(res); return 0; }
 	(*pFloatBuffer)[resNum] = 0.0f; // padding sample for the interpolation
 	*pSmplCount = resNum;
 	return 1;
@@ -1021,9 +1023,9 @@ static int tsf_load_samples(void** pRawBuffer, float** pFloatBuffer, unsigned in
 	resNum = resMax = 0;
 	if (!tsf_decode_ogg((tsf_u8*)*pRawBuffer, (tsf_u8*)*pRawBuffer + chunkSmpl->size, pFloatBuffer, &resNum, &resMax, 65536)) return 0;
 	oldres = *pFloatBuffer;
-	if (!oldres || (sizeof(size_t) < 8 && resNum >= 0x7FFFFFFFu / (unsigned int)sizeof(float) - 1)) return 0;
+	if (!oldres || (size_t)resNum > (size_t)-1 / sizeof(float) - 1) return 0; //size computation would overflow
 	// one extra zero sample at the end so linear interpolation never reads past the buffer
-	if (!(*pFloatBuffer = (float*)TSF_REALLOC(*pFloatBuffer, (resNum + 1) * sizeof(float)))) { *pFloatBuffer = oldres; return 0; }
+	if (!(*pFloatBuffer = (float*)TSF_REALLOC(*pFloatBuffer, ((size_t)resNum + 1) * sizeof(float)))) { *pFloatBuffer = oldres; return 0; }
 	(*pFloatBuffer)[resNum] = 0.0f;
 	*pSmplCount = resNum;
 	return 1;
@@ -1032,9 +1034,9 @@ static int tsf_load_samples(void** pRawBuffer, float** pFloatBuffer, unsigned in
 	float *res, *out; const short *in;
 	(void)pRawBuffer;
 	*pSmplCount = chunkSmpl->size / (unsigned int)sizeof(short);
-	if (sizeof(size_t) < 8 && *pSmplCount >= 0x7FFFFFFFu / (unsigned int)sizeof(float) - 1) return 0; //size computation would overflow on 32 bit
+	if ((size_t)*pSmplCount > (size_t)-1 / sizeof(float) - 1) return 0; //size computation would overflow
 	// one extra zero sample at the end so linear interpolation never reads past the buffer
-	*pFloatBuffer = (float*)TSF_MALLOC((*pSmplCount + 1) * sizeof(float));
+	*pFloatBuffer = (float*)TSF_MALLOC(((size_t)*pSmplCount + 1) * sizeof(float));
 	if (!*pFloatBuffer) return 0;
 	// the raw 16 bit data is read into the front of the (larger) float buffer and widened in place, back to front
 	if ((tsf_u32)stream->read(stream->data, *pFloatBuffer, *pSmplCount * (unsigned int)sizeof(short)) != *pSmplCount * (unsigned int)sizeof(short)) return 0;
