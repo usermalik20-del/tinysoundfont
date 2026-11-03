@@ -1263,7 +1263,9 @@ static int tsf_load_samples(void** pRawBuffer, float** pFloatBuffer, unsigned in
 	float *res, *out; const short *in;
 	(void)pRawBuffer;
 	*pSmplCount = chunkSmpl->size / (unsigned int)sizeof(short);
-	if ((size_t)*pSmplCount > (size_t)-1 / sizeof(float) - 1) return 0; //size computation would overflow
+	#if defined(__SIZEOF_SIZE_T__) && __SIZEOF_SIZE_T__ == 4
+	if ((size_t)*pSmplCount > (size_t)-1 / sizeof(float) - 1) return 0; //size computation would overflow (32-bit hosts)
+	#endif
 	// one extra zero sample at the end so linear interpolation never reads past the buffer
 	*pFloatBuffer = (float*)TSF_MALLOC(((size_t)*pSmplCount + 1) * sizeof(float));
 	if (!*pFloatBuffer) return 0;
@@ -1768,14 +1770,17 @@ static void tsf_voice_render(tsf* f, struct tsf_voice* v, float* outputBuffer, i
 				gainLeft = gainMono * v->panFactorLeft, gainRight = gainMono * v->panFactorRight;
 				while (blockSamples-- && tmpSourceSamplePosition < tmpSampleEndDbl)
 				{
-					unsigned int pos = (unsigned int)tmpSourceSamplePosition, nextPos = (pos >= tmpLoopEnd && isLooping ? tmpLoopStart : pos + 1);
-
-					// High-quality Catmull-Rom interpolation (default) or linear fallback.
+										// High-quality Catmull-Rom interpolation (default) or linear fallback.
 					float val;
 					#if TSF_HIGH_QUALITY_INTERPOLATION
 					val = tsf_voice_interpolate(input, tmpSourceSamplePosition, region->offset, region->end, tmpLoopStart, tmpLoopEnd, isLooping);
 					#else
-					float alpha = (float)(tmpSourceSamplePosition - pos), val = (input[pos] * (1.0f - alpha) + input[nextPos] * alpha);
+					{
+						unsigned int pos = (unsigned int)tmpSourceSamplePosition;
+						unsigned int nextPos = (pos >= tmpLoopEnd && isLooping ? tmpLoopStart : pos + 1);
+						float alpha = (float)(tmpSourceSamplePosition - (double)pos);
+						val = input[pos] * (1.0f - alpha) + input[nextPos] * alpha;
+					}
 					#endif
 
 					// Low-pass filter.
@@ -1794,14 +1799,17 @@ static void tsf_voice_render(tsf* f, struct tsf_voice* v, float* outputBuffer, i
 				gainLeft = gainMono * v->panFactorLeft, gainRight = gainMono * v->panFactorRight;
 				while (blockSamples-- && tmpSourceSamplePosition < tmpSampleEndDbl)
 				{
-					unsigned int pos = (unsigned int)tmpSourceSamplePosition, nextPos = (pos >= tmpLoopEnd && isLooping ? tmpLoopStart : pos + 1);
-
-					// High-quality Catmull-Rom interpolation (default) or linear fallback.
+										// High-quality Catmull-Rom interpolation (default) or linear fallback.
 					float val;
 					#if TSF_HIGH_QUALITY_INTERPOLATION
 					val = tsf_voice_interpolate(input, tmpSourceSamplePosition, region->offset, region->end, tmpLoopStart, tmpLoopEnd, isLooping);
 					#else
-					float alpha = (float)(tmpSourceSamplePosition - pos), val = (input[pos] * (1.0f - alpha) + input[nextPos] * alpha);
+					{
+						unsigned int pos = (unsigned int)tmpSourceSamplePosition;
+						unsigned int nextPos = (pos >= tmpLoopEnd && isLooping ? tmpLoopStart : pos + 1);
+						float alpha = (float)(tmpSourceSamplePosition - (double)pos);
+						val = input[pos] * (1.0f - alpha) + input[nextPos] * alpha;
+					}
 					#endif
 
 					// Low-pass filter.
@@ -1819,14 +1827,17 @@ static void tsf_voice_render(tsf* f, struct tsf_voice* v, float* outputBuffer, i
 			case TSF_MONO:
 				while (blockSamples-- && tmpSourceSamplePosition < tmpSampleEndDbl)
 				{
-					unsigned int pos = (unsigned int)tmpSourceSamplePosition, nextPos = (pos >= tmpLoopEnd && isLooping ? tmpLoopStart : pos + 1);
-
-					// High-quality Catmull-Rom interpolation (default) or linear fallback.
+										// High-quality Catmull-Rom interpolation (default) or linear fallback.
 					float val;
 					#if TSF_HIGH_QUALITY_INTERPOLATION
 					val = tsf_voice_interpolate(input, tmpSourceSamplePosition, region->offset, region->end, tmpLoopStart, tmpLoopEnd, isLooping);
 					#else
-					float alpha = (float)(tmpSourceSamplePosition - pos), val = (input[pos] * (1.0f - alpha) + input[nextPos] * alpha);
+					{
+						unsigned int pos = (unsigned int)tmpSourceSamplePosition;
+						unsigned int nextPos = (pos >= tmpLoopEnd && isLooping ? tmpLoopStart : pos + 1);
+						float alpha = (float)(tmpSourceSamplePosition - (double)pos);
+						val = input[pos] * (1.0f - alpha) + input[nextPos] * alpha;
+					}
 					#endif
 
 					// Low-pass filter.
@@ -2362,8 +2373,8 @@ static void tsf_effects_process(tsf* f, float* buffer, int samples)
 {
 	struct tsf_effects* e = f->effects;
 	struct tsf_voice *v, *vEnd;
-	float sendC = 0.0f, sendR = 0.0f, lfoStep, chorusBase, chorusDepth, c0, c1, r0, r1;
-	int i, ch, comb, ap, channels = (f->outputmode == TSF_MONO ? 1 : 2);
+	float sendC = 0.0f, sendR = 0.0f, lfoStep, chorusBase, chorusDepth;
+	int i, ch, comb, ap;
 	const float reverbFeedback = 0.78f, reverbDamp = 0.35f, allpassFeedback = 0.5f;
 	if (!e || samples <= 0) return;
 	vEnd = f->voices ? f->voices + f->voiceNum : TSF_NULL;
@@ -2454,7 +2465,6 @@ static void tsf_effects_process(tsf* f, float* buffer, int samples)
 		else if (f->outputmode == TSF_STEREO_INTERLEAVED) { buffer[i * 2] = dryL + outL * sendC + outL * sendR; buffer[i * 2 + 1] = dryR + outR * sendC + outR * sendR; }
 		else buffer[i] = dryL + (outL + outR) * 0.5f * (sendC + sendR);
 	}
-	(void)channels;
 }
 
 TSFDEF void tsf_render_float(tsf* f, float* buffer, int samples, int flag_mixing)
