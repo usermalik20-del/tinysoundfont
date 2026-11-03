@@ -23,7 +23,7 @@ UPSTREAM_REVISION = "853a0a171759f1ddba0de1442133a75912bbeffa"
 FORK_REPO = "https://github.com/usermalik20-del/tinysoundfont"
 
 VENDOR_FILES = ["tsf.h", "LICENSE"]          # what the app vendors
-LOOSE_FILES = ["tsf.h", "tml.h", "LICENSE", "HARDENING.md"]  # full library drop-in
+LOOSE_FILES = ["tsf.h", "tml.h", "tsf_playback.h", "LICENSE", "HARDENING.md"]  # full library drop-in
 
 
 def sha256(path):
@@ -68,7 +68,8 @@ def main():
         "files": {name: sha256(os.path.join(vendor, name)) for name in VENDOR_FILES},
         "upstreamRepository": UPSTREAM_REPO,
         "upstreamRevision": UPSTREAM_REVISION,
-        "description": ("TinySoundFont v0.9 with the hardening patch; drop-in replacement for "
+        "description": ("TinySoundFont v0.9 with the hardening patch and the quality engine "
+                        "defaults; drop-in replacement for "
                         "apps/android/app/src/main/cpp/vendor/. See HARDENING.md in the same release."),
     }
     with open(os.path.join(vendor, "PROVENANCE.json"), "w") as f:
