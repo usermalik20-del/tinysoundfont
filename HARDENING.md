@@ -37,7 +37,7 @@ Runtime:
 
 ## Not changed / not verified
 - The SF3 / Ogg Vorbis path (needs stb_vorbis) only received the padding-sample change; it is not covered by the tests.
-- 32-bit builds could not be tested here (the overflow guards are written for them but unexercised).
+- 32-bit builds could not be tested *on this device*; CI runs a `gcc -m32` x86 lane and an ARMv7 cross build under qemu, so the 32-bit-only overflow guards (gated on `__SIZEOF_SIZE_T__ == 4`) are now exercised there.
 - Thread safety is unchanged: note_on/note_off and render still need external locking (see the header notes).
 - Sound quality items (interpolation, filter, modulators, chorus/reverb sends) are not part of this change.
 
@@ -65,6 +65,7 @@ Runtime:
 - The message-array growth in `tml.h` is computed in `size_t` and checked against
   `INT_MAX` and `SIZE_MAX / sizeof(tml_message)`, so the counters cannot overflow.
 - CI gained an SF3 / Ogg Vorbis lane that compiles the `STB_VORBIS_INCLUDE_STB_VORBIS_H`
+- The header is warning-clean under `-Wall -Wextra -Werror` (the flags KANTA's native regression build uses): the unused linear-fallback temporaries in the Catmull-Rom path and the unused effect-stage locals are gone, and the sample-count overflow check that is provably dead on 64-bit hosts is gated on pointer width so both widths compile without warnings. The change is behaviour-neutral on 64-bit builds, so the pinned audio hash baselines do not change.
   path (previously never compiled here) with a pinned stb_vorbis revision and runs the
   whole suite through it. This is what the earlier "SF3 path only got the padding-sample
   change and is untested" note referred to.
